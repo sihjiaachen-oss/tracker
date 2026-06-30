@@ -255,6 +255,7 @@
   function persist(){
     try{ localStorage.setItem(STORE_KEY, JSON.stringify(plans)); }
     catch(e){ alert('儲存失敗：瀏覽器儲存空間可能已滿或被封鎖。'); }
+    if(typeof scheduleAutoSync === 'function') scheduleAutoSync();
   }
 
   function openModal(plan){
@@ -515,7 +516,8 @@
         document.getElementById('btn-google-signin').textContent = '已登入 Google';
         document.getElementById('btn-google-upload').style.display = 'block';
         document.getElementById('btn-google-download').style.display = 'block';
-        setGoogleStatus('已登入，可以「同步到雲端」或「從雲端讀取」。');
+        setGoogleStatus('已登入，新增或修改資料後會自動同步到雲端。');
+        scheduleAutoSync();
       }
     });
   }
@@ -546,9 +548,9 @@
     return null;
   }
 
-  document.getElementById('btn-google-upload').addEventListener('click', async function(){
-    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
-    setGoogleStatus('同步中…');
+  async function uploadToDrive(silent){
+    if(!driveAccessToken) return false;
+    if(!silent) setGoogleStatus('同步中…');
     try{
       var id = driveFileId || await findDriveFile();
       var metadata = {name: DRIVE_FILE_NAME, mimeType: 'application/json'};
@@ -573,10 +575,24 @@
       if(!res.ok) throw new Error('upload failed');
       var data = await res.json();
       driveFileId = data.id;
-      setGoogleStatus('已同步到雲端（'+new Date().toLocaleString('zh-TW')+'）');
+      setGoogleStatus('已自動同步到雲端（'+new Date().toLocaleString('zh-TW')+'）');
+      return true;
     }catch(e){
-      setGoogleStatus('同步失敗，請再試一次。');
+      setGoogleStatus('自動同步失敗，請稍後用「同步到雲端」按鈕再試一次。');
+      return false;
     }
+  }
+
+  var autoSyncTimer = null;
+  function scheduleAutoSync(){
+    if(!driveAccessToken) return;
+    if(autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(function(){ uploadToDrive(true); }, 800);
+  }
+
+  document.getElementById('btn-google-upload').addEventListener('click', async function(){
+    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
+    await uploadToDrive(false);
   });
 
   document.getElementById('btn-google-download').addEventListener('click', async function(){
