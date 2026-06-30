@@ -120,6 +120,7 @@
   #lock-screen .err{font-size:12px;color:#c0392b;min-height:16px;margin:6px 0 4px}
   #app-content{display:none}
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 <div id="lock-screen">
@@ -142,6 +143,13 @@
     </div>
     <button id="btn-add">＋ 新增分期</button>
   </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+    <button id="btn-google-signin" style="flex:1;font-size:13px;min-width:120px">登入 Google</button>
+    <button id="btn-google-upload" style="flex:1;font-size:13px;min-width:120px;display:none">同步到雲端</button>
+    <button id="btn-google-download" style="flex:1;font-size:13px;min-width:120px;display:none">從雲端讀取</button>
+  </div>
+  <p id="google-status" style="font-size:12px;color:var(--text-muted);margin:0 0 16px">尚未登入 Google，目前資料僅存於此瀏覽器。</p>
 
   <div style="display:flex;gap:8px;margin-bottom:16px">
     <button id="btn-export" style="flex:1;font-size:13px">匯出備份</button>
@@ -477,6 +485,125 @@
     document.getElementById('view-grid').style.display='block';
     this.classList.add('active');
     document.getElementById('tab-list').classList.remove('active');
+  });
+
+  // ---- Google Drive 同步 (appDataFolder) ----
+  var GOOGLE_CLIENT_ID = '318579246047-ahdsc8epir18m3p42krh7tqddrrcbs64.apps.googleusercontent.com';
+  var DRIVE_FILE_NAME = 'installment_tracker_data.json';
+  var driveAccessToken = null;
+  var driveFileId = null;
+  var tokenClient = null;
+
+  function setGoogleStatus(text){
+    document.getElementById('google-status').textContent = text;
+  }
+
+  function initGoogleAuth(){
+    if(typeof google === 'undefined' || !google.accounts){
+      setGoogleStatus('Google 登入元件載入失敗，請檢查網路連線後重新整理。');
+      return;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.appdata',
+      callback: function(resp){
+        if(resp.error){
+          setGoogleStatus('登入失敗：'+resp.error);
+          return;
+        }
+        driveAccessToken = resp.access_token;
+        document.getElementById('btn-google-signin').textContent = '已登入 Google';
+        document.getElementById('btn-google-upload').style.display = 'block';
+        document.getElementById('btn-google-download').style.display = 'block';
+        setGoogleStatus('已登入，可以「同步到雲端」或「從雲端讀取」。');
+      }
+    });
+  }
+
+  document.getElementById('btn-google-signin').addEventListener('click', function(){
+    if(!tokenClient){ initGoogleAuth(); }
+    if(tokenClient){
+      tokenClient.requestAccessToken({prompt: driveAccessToken ? '' : 'consent'});
+    }
+  });
+
+  function driveFetch(url, options){
+    options = options || {};
+    options.headers = options.headers || {};
+    options.headers['Authorization'] = 'Bearer ' + driveAccessToken;
+    return fetch(url, options);
+  }
+
+  async function findDriveFile(){
+    var url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=' +
+      encodeURIComponent("name='"+DRIVE_FILE_NAME+"'") + '&fields=files(id,name)';
+    var res = await driveFetch(url);
+    var data = await res.json();
+    if(data.files && data.files.length>0){
+      driveFileId = data.files[0].id;
+      return driveFileId;
+    }
+    return null;
+  }
+
+  document.getElementById('btn-google-upload').addEventListener('click', async function(){
+    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
+    setGoogleStatus('同步中…');
+    try{
+      var id = driveFileId || await findDriveFile();
+      var metadata = {name: DRIVE_FILE_NAME, mimeType: 'application/json'};
+      if(!id) metadata.parents = ['appDataFolder'];
+      var boundary = 'boundary_'+Date.now();
+      var body =
+        '--'+boundary+'\r\n'+
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n'+
+        JSON.stringify(metadata)+'\r\n'+
+        '--'+boundary+'\r\n'+
+        'Content-Type: application/json\r\n\r\n'+
+        JSON.stringify(plans)+'\r\n'+
+        '--'+boundary+'--';
+      var url = id
+        ? 'https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=multipart'
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+      var res = await driveFetch(url, {
+        method: id ? 'PATCH' : 'POST',
+        headers: {'Content-Type': 'multipart/related; boundary='+boundary},
+        body: body
+      });
+      if(!res.ok) throw new Error('upload failed');
+      var data = await res.json();
+      driveFileId = data.id;
+      setGoogleStatus('已同步到雲端（'+new Date().toLocaleString('zh-TW')+'）');
+    }catch(e){
+      setGoogleStatus('同步失敗，請再試一次。');
+    }
+  });
+
+  document.getElementById('btn-google-download').addEventListener('click', async function(){
+    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
+    setGoogleStatus('讀取中…');
+    try{
+      var id = driveFileId || await findDriveFile();
+      if(!id){
+        setGoogleStatus('雲端尚無備份資料，請先按「同步到雲端」建立一份。');
+        return;
+      }
+      var res = await driveFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
+      if(!res.ok) throw new Error('download failed');
+      var data = await res.json();
+      if(!Array.isArray(data)) throw new Error('format');
+      if(plans.length>0 && !confirm('從雲端讀取將會「取代」目前畫面上的資料，確定要繼續嗎？')) return;
+      plans = data;
+      persist();
+      render();
+      setGoogleStatus('已從雲端讀取最新資料。');
+    }catch(e){
+      setGoogleStatus('讀取失敗，請再試一次。');
+    }
+  });
+
+  window.addEventListener('load', function(){
+    setTimeout(initGoogleAuth, 300);
   });
 
   document.getElementById('btn-export').addEventListener('click', function(){
