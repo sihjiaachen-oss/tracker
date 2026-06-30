@@ -244,6 +244,10 @@
     var cur=currentYM(); var sched=planSchedule(p);
     return sched.some(function(ms){ return ms.y===cur.y && ms.m===cur.m; });
   }
+  function isActiveNextMonth(p){
+    var cur=currentYM(); var nxt=addMonths(cur.y,cur.m,1); var sched=planSchedule(p);
+    return sched.some(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
+  }
 
   function load(){
     try{
@@ -314,27 +318,33 @@
   }
 
   function renderSummary(){
-    var totalRemaining=0, monthlyDue=0, activeCount=0;
+    var totalRemaining=0, monthlyDue=0, nextMonthDue=0, activeCount=0;
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       totalRemaining += remaining*p.amount;
-      if(remaining>0){ activeCount++; if(isActiveThisMonth(p)) monthlyDue+=p.amount; }
+      if(remaining>0){
+        activeCount++;
+        if(isActiveThisMonth(p)) monthlyDue+=p.amount;
+        if(isActiveNextMonth(p)) nextMonthDue+=p.amount;
+      }
     });
     document.getElementById('summary').innerHTML =
       '<div class="card"><p class="label">本月應繳</p><p class="value">'+fmtMoney(monthlyDue)+'</p></div>'+
+      '<div class="card"><p class="label">次月應繳</p><p class="value">'+fmtMoney(nextMonthDue)+'</p></div>'+
       '<div class="card"><p class="label">未繳總額</p><p class="value">'+fmtMoney(totalRemaining)+'</p></div>'+
       '<div class="card"><p class="label">進行中項目</p><p class="value">'+activeCount+'</p></div>';
   }
 
   function renderBankSummary(){
     var banks=['T','Z']; var stats={};
-    banks.forEach(function(b){ stats[b]={monthly:0,remaining:0,count:0}; });
+    banks.forEach(function(b){ stats[b]={monthly:0,nextMonthly:0,remaining:0,count:0}; });
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       if(remaining>0){
         stats[p.bank].remaining += remaining*p.amount;
         stats[p.bank].count += 1;
         if(isActiveThisMonth(p)) stats[p.bank].monthly += p.amount;
+        if(isActiveNextMonth(p)) stats[p.bank].nextMonthly += p.amount;
       }
     });
     var html='';
@@ -342,6 +352,7 @@
       html += '<div class="bank-card '+b+'">'+
         '<p style="font-weight:500">'+b+'　進行中 '+stats[b].count+' 項</p>'+
         '<p>本月應繳：<span style="font-size:18px;font-weight:500">'+fmtMoney(stats[b].monthly)+'</span></p>'+
+        '<p>次月應繳：<span style="font-weight:500">'+fmtMoney(stats[b].nextMonthly)+'</span></p>'+
         '<p>未繳總額：<span style="font-weight:500">'+fmtMoney(stats[b].remaining)+'</span></p>'+
       '</div>';
     });
