@@ -183,9 +183,29 @@
         <label>總期數 <span style="color:#c0392b">*</span></label>
         <input id="f-total" type="number" min="1" step="1" placeholder="12" style="width:100%" />
       </div>
-      <div class="field">
+      <div class="field" id="f-amount-wrap">
         <label>每期金額 <span style="color:#c0392b">*</span></label>
         <input id="f-amount" type="number" min="0" step="1" placeholder="2600" style="width:100%" />
+      </div>
+    </div>
+    <div class="field" style="display:flex;align-items:center;gap:8px">
+      <input id="f-phase-toggle" type="checkbox" style="width:auto;height:auto" />
+      <label style="margin:0;font-size:13px" for="f-phase-toggle">前後期金額不同（分階段）</label>
+    </div>
+    <div id="f-phase-wrap" style="display:none">
+      <div class="field-row">
+        <div class="field">
+          <label>前幾期</label>
+          <input id="f-phase1-count" type="number" min="1" step="1" placeholder="3" style="width:100%" />
+        </div>
+        <div class="field">
+          <label>前期每期金額</label>
+          <input id="f-phase1-amount" type="number" min="0" step="1" placeholder="2000" style="width:100%" />
+        </div>
+      </div>
+      <div class="field">
+        <label>剩餘期數每期金額</label>
+        <input id="f-phase2-amount" type="number" min="0" step="1" placeholder="1800" style="width:100%" />
       </div>
     </div>
     <div class="field">
@@ -235,10 +255,37 @@
     for(var i=0;i<p.total;i++){ var ym=addMonths(sy,sm,i); months.push({y:ym.y,m:ym.m,idx:i+1}); }
     return months;
   }
+  function planAmountForIndex(p, idx){
+    if(p.phases && p.phases.length){
+      var acc=0;
+      for(var i=0;i<p.phases.length;i++){
+        acc += p.phases[i].count;
+        if(idx<=acc) return p.phases[i].amount;
+      }
+      return p.phases[p.phases.length-1].amount;
+    }
+    return p.amount;
+  }
+  function planRemainingAmount(p){
+    var paid=paidCount(p);
+    var sum=0;
+    for(var idx=paid+1; idx<=p.total; idx++){ sum += planAmountForIndex(p, idx); }
+    return sum;
+  }
   function paidCount(p){
     var cur=currentYM(); var sched=planSchedule(p); var count=0;
     sched.forEach(function(ms){ if(ms.y<cur.y || (ms.y===cur.y && ms.m<=cur.m)) count++; });
     return Math.min(count,p.total);
+  }
+  function amountThisMonth(p){
+    var cur=currentYM(); var sched=planSchedule(p);
+    var hit = sched.find(function(ms){ return ms.y===cur.y && ms.m===cur.m; });
+    return hit ? planAmountForIndex(p, hit.idx) : 0;
+  }
+  function amountNextMonth(p){
+    var cur=currentYM(); var nxt=addMonths(cur.y,cur.m,1); var sched=planSchedule(p);
+    var hit = sched.find(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
+    return hit ? planAmountForIndex(p, hit.idx) : 0;
   }
   function isActiveThisMonth(p){
     var cur=currentYM(); var sched=planSchedule(p);
@@ -268,12 +315,31 @@
     document.getElementById('f-bank').value = plan ? plan.bank : 'T';
     document.getElementById('f-name').value = plan ? plan.name : '';
     document.getElementById('f-total').value = plan ? plan.total : '';
-    document.getElementById('f-amount').value = plan ? plan.amount : '';
     document.getElementById('f-start').value = plan ? plan.start : '';
     document.getElementById('f-note').value = plan ? (plan.note||'') : '';
+    var hasPhases = plan && plan.phases && plan.phases.length>1;
+    document.getElementById('f-phase-toggle').checked = !!hasPhases;
+    if(hasPhases){
+      document.getElementById('f-phase1-count').value = plan.phases[0].count;
+      document.getElementById('f-phase1-amount').value = plan.phases[0].amount;
+      document.getElementById('f-phase2-amount').value = plan.phases[1].amount;
+      document.getElementById('f-amount').value = '';
+    } else {
+      document.getElementById('f-amount').value = plan ? plan.amount : '';
+      document.getElementById('f-phase1-count').value = '';
+      document.getElementById('f-phase1-amount').value = '';
+      document.getElementById('f-phase2-amount').value = '';
+    }
+    togglePhaseFields();
     document.getElementById('modal-wrap').classList.add('open');
   }
   function closeModal(){ document.getElementById('modal-wrap').classList.remove('open'); }
+  function togglePhaseFields(){
+    var on = document.getElementById('f-phase-toggle').checked;
+    document.getElementById('f-phase-wrap').style.display = on ? 'block' : 'none';
+    document.getElementById('f-amount-wrap').style.display = on ? 'none' : 'block';
+  }
+  document.getElementById('f-phase-toggle').addEventListener('change', togglePhaseFields);
 
   document.getElementById('btn-add').addEventListener('click', function(){ openModal(null); });
   document.getElementById('btn-cancel').addEventListener('click', closeModal);
@@ -285,13 +351,38 @@
     var bank=document.getElementById('f-bank').value;
     var name=document.getElementById('f-name').value.trim();
     var total=parseInt(document.getElementById('f-total').value,10);
-    var amount=parseFloat(document.getElementById('f-amount').value);
     var start=document.getElementById('f-start').value;
     var note=document.getElementById('f-note').value.trim();
-    if(!total || total<=0 || !amount || amount<=0 || isNaN(total) || isNaN(amount)){
-      alert('請填寫總期數與每期金額');
+    var usePhases = document.getElementById('f-phase-toggle').checked;
+    var amount, phases;
+
+    if(!total || total<=0 || isNaN(total)){
+      alert('請填寫總期數');
       return;
     }
+
+    if(usePhases){
+      var p1count = parseInt(document.getElementById('f-phase1-count').value,10);
+      var p1amount = parseFloat(document.getElementById('f-phase1-amount').value);
+      var p2amount = parseFloat(document.getElementById('f-phase2-amount').value);
+      if(!p1count || p1count<=0 || p1count>=total || isNaN(p1count) || !p1amount || p1amount<=0 || isNaN(p1amount) || !p2amount || p2amount<=0 || isNaN(p2amount)){
+        alert('請完整填寫分階段期數與金額（前幾期需小於總期數）');
+        return;
+      }
+      phases = [
+        {count: p1count, amount: p1amount},
+        {count: total - p1count, amount: p2amount}
+      ];
+      amount = p1amount;
+    } else {
+      amount = parseFloat(document.getElementById('f-amount').value);
+      if(!amount || amount<=0 || isNaN(amount)){
+        alert('請填寫每期金額');
+        return;
+      }
+      phases = null;
+    }
+
     if(!name) name = '未命名項目';
     if(!start){
       var cur=currentYM();
@@ -301,8 +392,10 @@
     if(editingId){
       plan = plans.find(function(p){ return p.id===editingId; });
       plan.bank=bank; plan.name=name; plan.total=total; plan.amount=amount; plan.start=start; plan.note=note;
+      if(phases) plan.phases = phases; else delete plan.phases;
     } else {
       plan = {id:uid(), bank:bank, name:name, total:total, amount:amount, start:start, note:note, created:Date.now()};
+      if(phases) plan.phases = phases;
       plans.push(plan);
     }
     persist();
@@ -321,11 +414,11 @@
     var totalRemaining=0, monthlyDue=0, nextMonthDue=0, activeCount=0;
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
-      totalRemaining += remaining*p.amount;
+      totalRemaining += planRemainingAmount(p);
       if(remaining>0){
         activeCount++;
-        if(isActiveThisMonth(p)) monthlyDue+=p.amount;
-        if(isActiveNextMonth(p)) nextMonthDue+=p.amount;
+        monthlyDue += amountThisMonth(p);
+        nextMonthDue += amountNextMonth(p);
       }
     });
     document.getElementById('summary').innerHTML =
@@ -341,10 +434,10 @@
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       if(remaining>0){
-        stats[p.bank].remaining += remaining*p.amount;
+        stats[p.bank].remaining += planRemainingAmount(p);
         stats[p.bank].count += 1;
-        if(isActiveThisMonth(p)) stats[p.bank].monthly += p.amount;
-        if(isActiveNextMonth(p)) stats[p.bank].nextMonthly += p.amount;
+        stats[p.bank].monthly += amountThisMonth(p);
+        stats[p.bank].nextMonthly += amountNextMonth(p);
       }
     });
     var html='';
@@ -375,12 +468,15 @@
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       var pct=Math.min(100,Math.round((paid/p.total)*100));
       var done=remaining===0;
+      var amountLabel = (p.phases && p.phases.length>1)
+        ? '前'+p.phases[0].count+'期 '+fmtMoney(p.phases[0].amount)+'／後'+p.phases[1].count+'期 '+fmtMoney(p.phases[1].amount)
+        : '每期 '+fmtMoney(p.amount);
       html += '<div class="item-card'+(done?' done':'')+'">'+
         '<div class="row-top">'+
           '<div>'+
             '<span class="badge '+p.bank+'">'+p.bank+'</span>'+
             '<p class="name">'+escapeHtml(p.name)+'</p>'+
-            '<p class="meta">每期 '+fmtMoney(p.amount)+'　起始 '+p.start+(p.note?'　'+escapeHtml(p.note):'')+'</p>'+
+            '<p class="meta">'+amountLabel+'　起始 '+p.start+(p.note?'　'+escapeHtml(p.note):'')+'</p>'+
           '</div>'+
           '<div class="actions">'+
             '<button data-edit="'+p.id+'">編輯</button>'+
@@ -388,7 +484,7 @@
           '</div>'+
         '</div>'+
         '<div class="progress-wrap">'+
-          '<div class="progress-line"><span>'+(done?'已繳清':'已繳 '+paid+' / '+p.total+' 期')+'</span><span>'+(done?'':'剩 '+fmtMoney(remaining*p.amount))+'</span></div>'+
+          '<div class="progress-line"><span>'+(done?'已繳清':'已繳 '+paid+' / '+p.total+' 期')+'</span><span>'+(done?'':'剩 '+fmtMoney(planRemainingAmount(p)))+'</span></div>'+
           '<div class="progress-bg"><div class="progress-fg" style="width:'+pct+'%"></div></div>'+
         '</div>'+
       '</div>';
@@ -471,7 +567,8 @@
       var sum=0;
       plans.forEach(function(p){
         var sched=planSchedule(p);
-        if(sched.some(function(ms){ return ms.y===ym.y && ms.m===ym.m; })) sum += p.amount;
+        var hit = sched.find(function(ms){ return ms.y===ym.y && ms.m===ym.m; });
+        if(hit) sum += planAmountForIndex(p, hit.idx);
       });
       html += '<td style="font-weight:500">'+(sum?fmtMoney(sum):'')+'</td>';
     });
