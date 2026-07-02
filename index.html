@@ -274,18 +274,42 @@
     for(var idx=paid+1; idx<=p.total; idx++){ sum += planAmountForIndex(p, idx); }
     return sum;
   }
+  var PAY_DAY = 7; // 每月繳費日
+
   function paidCount(p){
-    var cur=currentYM(); var sched=planSchedule(p); var count=0;
-    sched.forEach(function(ms){ if(ms.y<cur.y || (ms.y===cur.y && ms.m<=cur.m)) count++; });
-    return Math.min(count,p.total);
+    var now = new Date();
+    var cur = {y:now.getFullYear(), m:now.getMonth()+1};
+    var day = now.getDate();
+    var sched = planSchedule(p); var count = 0;
+    sched.forEach(function(ms){
+      if(ms.y < cur.y || (ms.y===cur.y && ms.m < cur.m)){
+        count++; // 前幾個月都算已繳
+      } else if(ms.y===cur.y && ms.m===cur.m && day >= PAY_DAY){
+        count++; // 當月：7號(含)之後才算已繳
+      }
+      // 當月 1-6 號：不算已繳，繼續顯示在本月應繳
+    });
+    return Math.min(count, p.total);
   }
   function amountThisMonth(p){
-    var cur=currentYM(); var sched=planSchedule(p);
+    var now = new Date();
+    var cur = {y:now.getFullYear(), m:now.getMonth()+1};
+    var day = now.getDate();
+    var sched = planSchedule(p);
+    // 7號前：當月未繳，要顯示本月應繳
+    // 7號後：當月已繳，本月應繳為0
+    if(day >= PAY_DAY) return 0;
     var hit = sched.find(function(ms){ return ms.y===cur.y && ms.m===cur.m; });
     return hit ? planAmountForIndex(p, hit.idx) : 0;
   }
   function amountNextMonth(p){
-    var cur=currentYM(); var nxt=addMonths(cur.y,cur.m,1); var sched=planSchedule(p);
+    var now = new Date();
+    var cur = {y:now.getFullYear(), m:now.getMonth()+1};
+    var day = now.getDate();
+    var sched = planSchedule(p);
+    // 7號前：「次月」就是下個月
+    // 7號後：當月已繳，「次月」才是下個月
+    var nxt = addMonths(cur.y, cur.m, 1);
     var hit = sched.find(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
     return hit ? planAmountForIndex(p, hit.idx) : 0;
   }
@@ -618,8 +642,7 @@
         document.getElementById('btn-google-signin').textContent = '已登入 Google';
         document.getElementById('btn-google-upload').style.display = 'block';
         document.getElementById('btn-google-download').style.display = 'block';
-        setGoogleStatus('已登入，新增或修改資料後會自動同步到雲端。');
-        scheduleAutoSync();
+        setGoogleStatus('已登入。如需同步請按「同步到雲端」，或按「從雲端讀取」取回資料。');
       }
     });
   }
