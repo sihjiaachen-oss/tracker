@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>房租記錄工具</title>
+<style>
+  :root{
+    --surface-2:#ffffff; --surface-1:#f4f3ef; --surface-0:#eceae3;
+    --text-primary:#1a1a18; --text-secondary:#5f5e5a; --text-muted:#888780;
+    --border:rgba(0,0,0,0.12); --border-strong:rgba(0,0,0,0.28);
+    --radius:8px;
+    --green-bg:#E3F5EC; --green-text:#1d6b3e;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --surface-2:#2c2c2a; --surface-1:#252523; --surface-0:#1c1c1b;
+      --text-primary:#f1efe8; --text-secondary:#b4b2a9; --text-muted:#888780;
+      --border:rgba(255,255,255,0.14); --border-strong:rgba(255,255,255,0.3);
+      --green-bg:#1d6b3e; --green-text:#A8E6BF;
+    }
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:24px 16px 60px; background:var(--surface-0); color:var(--text-primary);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:16px; line-height:1.6;
+  }
+  .wrap{max-width:760px;margin:0 auto}
+  h1{font-size:20px;font-weight:500;margin:0 0 4px}
+  .nav-link{display:inline-block;font-size:13px;color:var(--text-secondary);text-decoration:none;border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:6px 12px;margin-bottom:16px}
+  .nav-link:hover{background:var(--surface-1)}
+  button{
+    font-family:inherit; font-size:14px; padding:8px 14px; border-radius:var(--radius);
+    border:0.5px solid var(--border-strong); background:transparent; color:var(--text-primary);
+    cursor:pointer;
+  }
+  button:hover{background:var(--surface-1)}
+  button:active{transform:scale(0.98)}
+  input,select{
+    font-family:inherit; font-size:14px; padding:8px 10px; border-radius:var(--radius);
+    border:0.5px solid var(--border); background:var(--surface-1); color:var(--text-primary);
+    height:36px;
+  }
+  input:focus,select:focus{outline:none;box-shadow:0 0 0 2px var(--border-strong)}
+  label{font-size:13px;color:var(--text-secondary);display:block;margin-bottom:3px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:8px 0 14px;flex-wrap:wrap;gap:8px}
+  .grid-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+  .card{background:var(--surface-1);border-radius:var(--radius);padding:1rem}
+  .card .label{font-size:13px;color:var(--text-secondary);margin:0 0 4px}
+  .card .value{font-size:24px;font-weight:500;margin:0}
+  table{border-collapse:collapse;font-size:13px;width:100%}
+  th,td{padding:10px 10px;border-bottom:0.5px solid var(--border);white-space:nowrap}
+  th{color:var(--text-secondary);font-weight:500;text-align:left;background:var(--surface-1)}
+  td{text-align:right}
+  td:first-child{text-align:left}
+  .table-wrap{overflow-x:auto;background:var(--surface-2);border-radius:12px;border:0.5px solid var(--border)}
+  .empty{color:var(--text-muted);font-size:14px;text-align:center;padding:2rem 0}
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45);
+    align-items:center; justify-content:center; z-index:10; padding:16px;
+  }
+  .modal-overlay.open{display:flex}
+  .modal{background:var(--surface-2);border-radius:12px;border:0.5px solid var(--border);padding:20px;width:340px;max-width:100%}
+  .modal h2{font-size:16px;font-weight:500;margin:0 0 12px}
+  .field-row{display:flex;gap:8px}
+  .field{flex:1;margin-bottom:10px}
+  .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+  .confirm-overlay{
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45);
+    align-items:center; justify-content:center; z-index:20; padding:16px;
+  }
+  .confirm-overlay.open{display:flex}
+  .confirm-box{background:var(--surface-2);border-radius:12px;border:0.5px solid var(--border);padding:20px;width:300px;max-width:100%;text-align:center}
+  .confirm-box p{font-size:14px;margin:0 0 16px}
+  .confirm-box .row{display:flex;gap:8px;justify-content:center}
+  .confirm-box .row button{flex:1}
+  .confirm-box .danger{background:#c0392b;color:#fff;border-color:#c0392b}
+  .up{color:#c0392b;font-weight:500}
+  .down{color:#1d9e75;font-weight:500}
+  .act-btn{padding:3px 10px;font-size:12px}
+  @media (max-width:480px){
+    body{padding:16px 12px 50px;font-size:15px}
+    h1{font-size:18px}
+    .topbar{margin:8px 0 12px}
+    button{padding:9px 12px;font-size:13px}
+    .card .value{font-size:20px}
+    .modal{width:100%}
+  }
+  #lock-screen{
+    position:fixed; inset:0; background:var(--surface-0); display:flex; align-items:center;
+    justify-content:center; z-index:100; padding:20px;
+  }
+  #lock-screen .box{width:280px; max-width:100%; text-align:center}
+  #lock-screen p.title{font-size:16px;font-weight:500;margin:0 0 16px}
+  #lock-screen input{width:100%; text-align:center; letter-spacing:4px; margin-bottom:10px}
+  #lock-screen button{width:100%; font-weight:500}
+  #lock-screen .err{font-size:12px;color:#c0392b;min-height:16px;margin:6px 0 4px}
+  #app-content{display:none}
+</style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+
+<div id="lock-screen">
+  <div class="box">
+    <p class="title">請輸入密碼</p>
+    <input id="lock-input" type="password" inputmode="numeric" maxlength="12" placeholder="••••••" />
+    <p class="err" id="lock-err"></p>
+    <button id="lock-btn">解鎖</button>
+  </div>
+</div>
+
+<div id="app-content">
+<div class="wrap">
+  <h1>🏠 房租記錄</h1>
+  <a class="nav-link" href="index.html">← 返回分期追蹤工具</a>
+
+  <div class="topbar">
+    <div></div>
+    <button id="btn-add">＋ 新增房租記錄</button>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+    <button id="btn-google-signin" style="flex:1;font-size:13px;min-width:120px">登入 Google</button>
+    <button id="btn-google-upload" style="flex:1;font-size:13px;min-width:120px;display:none">同步到雲端</button>
+    <button id="btn-google-download" style="flex:1;font-size:13px;min-width:120px;display:none">從雲端讀取</button>
+  </div>
+  <p id="google-status" style="font-size:12px;color:var(--text-muted);margin:0 0 16px">尚未登入 Google，目前資料僅存於此瀏覽器。</p>
+
+  <div class="grid-summary" id="rent-summary"></div>
+  <div id="month-compare" style="margin-bottom:20px"></div>
+  <div id="view-rent"></div>
+</div>
+
+<div class="modal-overlay" id="modal-wrap">
+  <div class="modal">
+    <h2 id="modal-title">新增房租記錄</h2>
+    <div class="field">
+      <label>月份 <span style="color:#c0392b">*</span></label>
+      <input id="r-month" type="month" style="width:100%" />
+    </div>
+    <div class="field-row">
+      <div class="field">
+        <label>房租 <span style="color:#c0392b">*</span></label>
+        <input id="r-rent" type="number" min="0" step="1" placeholder="9300" style="width:100%" />
+      </div>
+      <div class="field">
+        <label>電費 <span style="color:#c0392b">*</span></label>
+        <input id="r-electricity" type="number" min="0" step="1" placeholder="800" style="width:100%" />
+      </div>
+    </div>
+    <div class="field">
+      <label>備註（選填）</label>
+      <input id="r-note" placeholder="備註" style="width:100%" />
+    </div>
+    <div class="modal-actions">
+      <button id="btn-cancel">取消</button>
+      <button id="btn-save" style="font-weight:500">儲存</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="confirm-overlay" id="confirm-wrap">
+  <div class="confirm-box">
+    <p>確定要刪除這筆房租記錄嗎？此動作無法復原。</p>
+    <div class="row">
+      <button id="confirm-cancel">取消</button>
+      <button id="confirm-ok" class="danger">刪除</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var RENT_STORE_KEY = 'rent_records_v1';
+  var rentRecords = [];
+  var editingId = null;
+
+  function uid(){ return 'r'+Date.now()+Math.floor(Math.random()*1000); }
+  function fmtMoney(n){ return 'NT$'+Math.round(n).toLocaleString(); }
+  function currentYM(){ var d=new Date(); return {y:d.getFullYear(), m:d.getMonth()+1}; }
+
+  function load(){
+    try{
+      var raw = localStorage.getItem(RENT_STORE_KEY);
+      rentRecords = raw ? JSON.parse(raw) : [];
+    }catch(e){ rentRecords = []; }
+    renderRent();
+  }
+  function persist(){
+    try{ localStorage.setItem(RENT_STORE_KEY, JSON.stringify(rentRecords)); }
+    catch(e){ alert('儲存失敗：瀏覽器儲存空間可能已滿或被封鎖。'); }
+    if(typeof scheduleAutoSync === 'function') scheduleAutoSync();
+  }
+
+  function openModal(rec){
+    editingId = rec ? rec.id : null;
+    document.getElementById('modal-title').textContent = rec ? '編輯房租記錄' : '新增房租記錄';
+    document.getElementById('r-month').value = rec ? rec.month : '';
+    document.getElementById('r-rent').value = rec ? rec.rent : '';
+    document.getElementById('r-electricity').value = rec ? rec.electricity : '';
+    document.getElementById('r-note').value = rec ? (rec.note||'') : '';
+    document.getElementById('modal-wrap').classList.add('open');
+  }
+  function closeModal(){ document.getElementById('modal-wrap').classList.remove('open'); }
+
+  document.getElementById('btn-add').addEventListener('click', function(){ openModal(null); });
+  document.getElementById('btn-cancel').addEventListener('click', closeModal);
+  document.getElementById('modal-wrap').addEventListener('click', function(e){
+    if(e.target.id==='modal-wrap') closeModal();
+  });
+
+  document.getElementById('btn-save').addEventListener('click', function(){
+    var month = document.getElementById('r-month').value;
+    var rent = parseFloat(document.getElementById('r-rent').value);
+    var electricity = parseFloat(document.getElementById('r-electricity').value);
+    var note = document.getElementById('r-note').value.trim();
+    if(!month || isNaN(rent) || rent<0 || isNaN(electricity) || electricity<0){
+      alert('請填寫月份、房租與電費');
+      return;
+    }
+    if(rentRecords.some(function(r){ return r.month===month && r.id!==editingId; })){
+      if(!confirm('這個月份已有紀錄，要建立第二筆嗎？')) return;
+    }
+    var rec;
+    if(editingId){
+      rec = rentRecords.find(function(r){ return r.id===editingId; });
+      rec.month=month; rec.rent=rent; rec.electricity=electricity; rec.note=note;
+    } else {
+      rec = {id:uid(), month:month, rent:rent, electricity:electricity, note:note, created:Date.now()};
+      rentRecords.push(rec);
+    }
+    persist();
+    closeModal();
+    renderRent();
+  });
+
+  function renderRent(){
+    var sorted = rentRecords.slice().sort(function(a,b){ return a.month<b.month?-1:(a.month>b.month?1:0); });
+    var cur = currentYM();
+    var thisMonthKey = cur.y+'-'+String(cur.m).padStart(2,'0');
+    var prevM = cur.m===1 ? {y:cur.y-1,m:12} : {y:cur.y,m:cur.m-1};
+    var prevMonthKey = prevM.y+'-'+String(prevM.m).padStart(2,'0');
+    var latest = sorted.length ? sorted[sorted.length-1] : null;
+    var avgRent = sorted.length ? Math.round(sorted.reduce(function(s,r){return s+r.rent;},0)/sorted.length) : 0;
+    var avgElec = sorted.length ? Math.round(sorted.reduce(function(s,r){return s+r.electricity;},0)/sorted.length) : 0;
+    var totalPaid = sorted.reduce(function(s,r){return s+r.rent+r.electricity;},0);
+
+    document.getElementById('rent-summary').innerHTML =
+      '<div class="card"><p class="label">最新月份房租＋電費</p><p class="value">'+(latest?fmtMoney(latest.rent+latest.electricity):'—')+'</p></div>'+
+      '<div class="card"><p class="label">平均每月房租</p><p class="value">'+(sorted.length?fmtMoney(avgRent):'—')+'</p></div>'+
+      '<div class="card"><p class="label">平均每月電費</p><p class="value">'+(sorted.length?fmtMoney(avgElec):'—')+'</p></div>'+
+      '<div class="card"><p class="label">累計總支出</p><p class="value">'+fmtMoney(totalPaid)+'</p></div>';
+
+    // ---- 當月 vs 上月比較 ----
+    var thisRec = sorted.find(function(r){ return r.month===thisMonthKey; });
+    var prevRec = sorted.find(function(r){ return r.month===prevMonthKey; });
+
+    function diffTag(cur, prev){
+      if(cur==null || prev==null) return '<span style="color:var(--text-muted)">—</span>';
+      var d = cur - prev;
+      if(d===0) return '<span style="color:var(--text-muted)">持平</span>';
+      var sign = d>0?'+':'';
+      return '<span class="'+(d>0?'up':'down')+'">'+sign+fmtMoney(d)+'</span>';
+    }
+    function fmtLabel(y, m){
+      return y+'年'+m+'月';
+    }
+
+    var compareEl = document.getElementById('month-compare');
+    if(!thisRec && !prevRec){
+      compareEl.innerHTML = '';
+    } else {
+      var tRent = thisRec ? thisRec.rent : null;
+      var tElec = thisRec ? thisRec.electricity : null;
+      var tTotal = thisRec ? thisRec.rent+thisRec.electricity : null;
+      var pRent = prevRec ? prevRec.rent : null;
+      var pElec = prevRec ? prevRec.electricity : null;
+      var pTotal = prevRec ? prevRec.rent+prevRec.electricity : null;
+
+      compareEl.innerHTML =
+        '<p style="font-size:13px;font-weight:500;color:var(--text-secondary);margin:0 0 10px">當月 vs 上月比較</p>'+
+        '<div style="background:var(--surface-2);border:0.5px solid var(--border);border-radius:12px;overflow:hidden">'+
+        '<table style="width:100%;font-size:13px">'+
+          '<tr style="background:var(--surface-1)">'+
+            '<th style="padding:10px 14px;text-align:left;font-weight:500;color:var(--text-secondary)">項目</th>'+
+            '<th style="padding:10px 14px;text-align:right;font-weight:500;color:var(--text-secondary)">'+fmtLabel(prevM.y,prevM.m)+'（上月）</th>'+
+            '<th style="padding:10px 14px;text-align:right;font-weight:500;color:var(--text-secondary)">'+fmtLabel(cur.y,cur.m)+'（本月）</th>'+
+            '<th style="padding:10px 14px;text-align:right;font-weight:500;color:var(--text-secondary)">差額</th>'+
+          '</tr>'+
+          '<tr>'+
+            '<td style="padding:10px 14px;font-weight:500">房租</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+(pRent!=null?fmtMoney(pRent):'<span style="color:var(--text-muted)">無紀錄</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+(tRent!=null?fmtMoney(tRent):'<span style="color:var(--text-muted)">無紀錄</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+diffTag(tRent,pRent)+'</td>'+
+          '</tr>'+
+          '<tr style="background:var(--surface-1)">'+
+            '<td style="padding:10px 14px;font-weight:500">電費</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+(pElec!=null?fmtMoney(pElec):'<span style="color:var(--text-muted)">無紀錄</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+(tElec!=null?fmtMoney(tElec):'<span style="color:var(--text-muted)">無紀錄</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+diffTag(tElec,pElec)+'</td>'+
+          '</tr>'+
+          '<tr style="border-top:1px solid var(--border-strong)">'+
+            '<td style="padding:10px 14px;font-weight:500">合計</td>'+
+            '<td style="padding:10px 14px;text-align:right;font-weight:500">'+(pTotal!=null?fmtMoney(pTotal):'<span style="color:var(--text-muted)">—</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right;font-weight:500">'+(tTotal!=null?fmtMoney(tTotal):'<span style="color:var(--text-muted)">—</span>')+'</td>'+
+            '<td style="padding:10px 14px;text-align:right">'+diffTag(tTotal,pTotal)+'</td>'+
+          '</tr>'+
+        '</table></div>';
+    }
+
+    var el = document.getElementById('view-rent');
+    if(sorted.length===0){
+      el.innerHTML = '<p class="empty">尚未新增任何房租記錄，點右上角「新增房租記錄」開始記錄。</p>';
+      return;
+    }
+
+    var html = '<div class="table-wrap"><table>'+
+      '<tr><th>月份</th><th style="text-align:right">房租</th><th style="text-align:right">電費</th><th style="text-align:right">合計</th><th style="text-align:right">與前月差</th><th></th></tr>';
+
+    sorted.forEach(function(r, idx){
+      var total = r.rent + r.electricity;
+      var prev = idx>0 ? sorted[idx-1] : null;
+      var diffCell = '<span style="color:var(--text-muted)">—</span>';
+      if(prev){
+        var diff = total - (prev.rent+prev.electricity);
+        if(diff===0){
+          diffCell = '<span style="color:var(--text-muted)">持平</span>';
+        } else {
+          var sign = diff>0?'+':'';
+          diffCell = '<span class="'+(diff>0?'up':'down')+'">'+sign+fmtMoney(diff)+'</span>';
+        }
+      }
+      var isThisMonth = r.month===thisMonthKey;
+      var monthLabel = r.month.replace('-','/').replace(/\/0(\d)/,'/$1');
+      html += '<tr style="'+(isThisMonth?'background:var(--surface-1)':'')+'">'+
+        '<td style="font-weight:500">'+monthLabel+(isThisMonth?' <span style="font-size:10px;color:var(--text-muted)">本月</span>':'')+'</td>'+
+        '<td>'+fmtMoney(r.rent)+'</td>'+
+        '<td>'+fmtMoney(r.electricity)+'</td>'+
+        '<td style="font-weight:500">'+fmtMoney(total)+'</td>'+
+        '<td>'+diffCell+'</td>'+
+        '<td style="text-align:right">'+
+          '<button class="act-btn" data-edit="'+r.id+'">編輯</button> '+
+          '<button class="act-btn" data-del="'+r.id+'">刪除</button>'+
+        '</td>'+
+      '</tr>';
+    });
+    html += '</table></div>';
+
+    var notes = sorted.filter(function(r){ return r.note; });
+    if(notes.length){
+      html += '<div style="margin-top:12px;font-size:12px;color:var(--text-muted)">備註：'+
+        notes.map(function(r){
+          return r.month.replace('-','/').replace(/\/0(\d)/,'/$1')+'　'+escapeHtml(r.note);
+        }).join('　｜　')+
+      '</div>';
+    }
+    el.innerHTML = html;
+
+    el.querySelectorAll('[data-edit]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var rec = rentRecords.find(function(r){ return r.id===btn.getAttribute('data-edit'); });
+        openModal(rec);
+      });
+    });
+    el.querySelectorAll('[data-del]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        pendingDeleteId = btn.getAttribute('data-del');
+        document.getElementById('confirm-wrap').classList.add('open');
+      });
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  var pendingDeleteId = null;
+  document.getElementById('confirm-cancel').addEventListener('click', function(){
+    pendingDeleteId = null;
+    document.getElementById('confirm-wrap').classList.remove('open');
+  });
+  document.getElementById('confirm-wrap').addEventListener('click', function(e){
+    if(e.target.id==='confirm-wrap'){
+      pendingDeleteId = null;
+      this.classList.remove('open');
+    }
+  });
+  document.getElementById('confirm-ok').addEventListener('click', function(){
+    if(pendingDeleteId){
+      rentRecords = rentRecords.filter(function(r){ return r.id!==pendingDeleteId; });
+      persist();
+      renderRent();
+    }
+    pendingDeleteId = null;
+    document.getElementById('confirm-wrap').classList.remove('open');
+  });
+
+  // ---- Google Drive 同步，與分期頁面共用同一個雲端檔案，互相保留對方資料 ----
+  var GOOGLE_CLIENT_ID = '318579246047-ahdsc8epir18m3p42krh7tqddrrcbs64.apps.googleusercontent.com';
+  var DRIVE_FILE_NAME = 'tracker_data.json';
+  var driveAccessToken = null;
+  var driveFileId = null;
+  var tokenClient = null;
+
+  function setGoogleStatus(text){
+    document.getElementById('google-status').textContent = text;
+  }
+
+  function initGoogleAuth(){
+    if(typeof google === 'undefined' || !google.accounts){
+      setGoogleStatus('Google 登入元件載入失敗，請檢查網路連線後重新整理。');
+      return;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.appdata',
+      callback: function(resp){
+        if(resp.error){
+          setGoogleStatus('登入失敗：'+resp.error);
+          return;
+        }
+        driveAccessToken = resp.access_token;
+        document.getElementById('btn-google-signin').textContent = '已登入 Google';
+        document.getElementById('btn-google-upload').style.display = 'block';
+        document.getElementById('btn-google-download').style.display = 'block';
+        setGoogleStatus('已登入，新增或修改資料後會自動同步到雲端。');
+        scheduleAutoSync();
+      }
+    });
+  }
+
+  document.getElementById('btn-google-signin').addEventListener('click', function(){
+    if(!tokenClient){ initGoogleAuth(); }
+    if(tokenClient){ tokenClient.requestAccessToken({prompt: driveAccessToken ? '' : 'consent'}); }
+  });
+
+  function driveFetch(url, options){
+    options = options || {};
+    options.headers = options.headers || {};
+    options.headers['Authorization'] = 'Bearer ' + driveAccessToken;
+    return fetch(url, options);
+  }
+
+  async function findDriveFile(){
+    var url = 'https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q='+
+      encodeURIComponent("name='"+DRIVE_FILE_NAME+"'")+'&fields=files(id,name)';
+    var res = await driveFetch(url);
+    var data = await res.json();
+    if(data.files && data.files.length>0){ driveFileId = data.files[0].id; return driveFileId; }
+    return null;
+  }
+
+  async function fetchRemoteData(id){
+    try{
+      var res = await driveFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
+      if(!res.ok) return {plans:[], rent:[]};
+      var data = await res.json();
+      if(Array.isArray(data)) return {plans: data, rent:[]};
+      return {plans: Array.isArray(data.plans)?data.plans:[], rent: Array.isArray(data.rent)?data.rent:[]};
+    }catch(e){ return {plans:[], rent:[]}; }
+  }
+
+  async function uploadToDrive(silent){
+    if(!driveAccessToken) return false;
+    if(!silent) setGoogleStatus('同步中…');
+    try{
+      var id = driveFileId || await findDriveFile();
+      var remote = id ? await fetchRemoteData(id) : {plans:[], rent:[]};
+      var payload = {plans: remote.plans, rent: rentRecords};
+      var metadata = {name: DRIVE_FILE_NAME, mimeType: 'application/json'};
+      if(!id) metadata.parents = ['appDataFolder'];
+      var boundary = 'boundary_'+Date.now();
+      var body =
+        '--'+boundary+'\r\n'+
+        'Content-Type: application/json; charset=UTF-8\r\n\r\n'+
+        JSON.stringify(metadata)+'\r\n'+
+        '--'+boundary+'\r\n'+
+        'Content-Type: application/json\r\n\r\n'+
+        JSON.stringify(payload)+'\r\n'+
+        '--'+boundary+'--';
+      var url = id
+        ? 'https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=multipart'
+        : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart';
+      var res = await driveFetch(url, {
+        method: id ? 'PATCH' : 'POST',
+        headers: {'Content-Type': 'multipart/related; boundary='+boundary},
+        body: body
+      });
+      if(!res.ok) throw new Error('upload failed');
+      var data = await res.json();
+      driveFileId = data.id;
+      setGoogleStatus('已自動同步到雲端（'+new Date().toLocaleString('zh-TW')+'）');
+      return true;
+    }catch(e){
+      setGoogleStatus('自動同步失敗，請稍後用「同步到雲端」按鈕再試一次。');
+      return false;
+    }
+  }
+
+  var autoSyncTimer = null;
+  function scheduleAutoSync(){
+    if(!driveAccessToken) return;
+    if(autoSyncTimer) clearTimeout(autoSyncTimer);
+    autoSyncTimer = setTimeout(function(){ uploadToDrive(true); }, 800);
+  }
+
+  document.getElementById('btn-google-upload').addEventListener('click', async function(){
+    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
+    await uploadToDrive(false);
+  });
+
+  document.getElementById('btn-google-download').addEventListener('click', async function(){
+    if(!driveAccessToken){ setGoogleStatus('請先登入 Google'); return; }
+    setGoogleStatus('讀取中…');
+    try{
+      var id = driveFileId || await findDriveFile();
+      if(!id){ setGoogleStatus('雲端尚無備份資料，請先按「同步到雲端」建立一份。'); return; }
+      var remote = await fetchRemoteData(id);
+      if(rentRecords.length>0 && !confirm('從雲端讀取將會「取代」目前畫面上的房租資料，確定要繼續嗎？')) return;
+      rentRecords = remote.rent;
+      persist();
+      renderRent();
+      setGoogleStatus('已從雲端讀取最新資料。');
+    }catch(e){
+      setGoogleStatus('讀取失敗，請再試一次。');
+    }
+  });
+
+  window.addEventListener('load', function(){
+    setTimeout(initGoogleAuth, 300);
+  });
+
+  load();
+})();
+
+(function(){
+  var PASSWORD = '130921';
+  var lockScreen = document.getElementById('lock-screen');
+  var appContent = document.getElementById('app-content');
+  var input = document.getElementById('lock-input');
+  var err = document.getElementById('lock-err');
+  var btn = document.getElementById('lock-btn');
+
+  function tryUnlock(){
+    if(input.value === PASSWORD){
+      lockScreen.style.display = 'none';
+      appContent.style.display = 'block';
+    } else {
+      err.textContent = '密碼錯誤，請再試一次';
+      input.value = '';
+      input.focus();
+    }
+  }
+  btn.addEventListener('click', tryUnlock);
+  input.addEventListener('keydown', function(e){
+    if(e.key === 'Enter') tryUnlock();
+  });
+  setTimeout(function(){ input.focus(); }, 100);
+})();
+</script>
+</body>
+</html>
