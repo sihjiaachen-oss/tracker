@@ -12,6 +12,8 @@
     --radius:8px;
     --blue-bg:#E6F1FB; --blue-text:#0C447C;
     --coral-bg:#FAECE7; --coral-text:#712B13;
+    --paid-bg:#E3F5E9; --paid-text:#1B7A43;
+    --due-bg:#FDECEA; --due-text:#B3261E;
   }
   @media (prefers-color-scheme: dark){
     :root{
@@ -20,6 +22,8 @@
       --border:rgba(255,255,255,0.14); --border-strong:rgba(255,255,255,0.3);
       --blue-bg:#0C447C; --blue-text:#B5D4F4;
       --coral-bg:#712B13; --coral-text:#F5C4B3;
+      --paid-bg:#1B7A43; --paid-text:#CFF3DC;
+      --due-bg:#B3261E; --due-text:#FADBD7;
     }
   }
   *{box-sizing:border-box}
@@ -63,6 +67,9 @@
   .badge{font-size:11px;padding:2px 8px;border-radius:var(--radius);font-weight:500;margin-right:8px}
   .badge.T{background:var(--blue-bg);color:var(--blue-text)}
   .badge.Z{background:var(--coral-bg);color:var(--coral-text)}
+  .badge.paid{background:var(--paid-bg);color:var(--paid-text)}
+  .badge.due{background:var(--due-bg);color:var(--due-text)}
+  .month-badge{margin:6px 0 0;display:block}
   .row-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
   .name{font-weight:500;font-size:15px;margin:0;display:inline}
   .meta{font-size:13px;color:var(--text-secondary);margin:4px 0 0}
@@ -268,50 +275,97 @@
     }
     return p.amount;
   }
-  function planRemainingAmount(p){
-    var paid=paidCount(p);
-    var sum=0;
-    for(var idx=paid+1; idx<=p.total; idx++){ sum += planAmountForIndex(p, idx); }
-    return sum;
+  // 手動標記「本月已繳」用的工具函式
+  // p.paidMonths 是字串陣列，例如 ["2026-07","2026-08"]，代表已被使用者按下「繳納完畢」的月份
+  function ymKey(y,m){ return y+'-'+String(m).padStart(2,'0'); }
+  function isMonthManuallyPaid(p, y, m){
+    return !!(p.paidMonths && p.paidMonths.indexOf(ymKey(y,m)) !== -1);
   }
-  var PAY_DAY = 7; // 每月繳費日
+  function toggleMonthPaid(p, y, m){
+    if(!p.paidMonths) p.paidMonths = [];
+    var key = ymKey(y,m);
+    var idx = p.paidMonths.indexOf(key);
+    if(idx === -1){ p.paidMonths.push(key); } else { p.paidMonths.splice(idx,1); }
+  }
 
-  function paidCount(p){
+  // 進度條用：只計算「完全過去的月份」，當月不算，月初才推進
+  function paidCountDisplay(p){
     var now = new Date();
     var cur = {y:now.getFullYear(), m:now.getMonth()+1};
-    var day = now.getDate();
     var sched = planSchedule(p); var count = 0;
     sched.forEach(function(ms){
-      if(ms.y < cur.y || (ms.y===cur.y && ms.m < cur.m)){
-        count++; // 前幾個月都算已繳
-      } else if(ms.y===cur.y && ms.m===cur.m && day >= PAY_DAY){
-        count++; // 當月：7號(含)之後才算已繳
-      }
-      // 當月 1-6 號：不算已繳，繼續顯示在本月應繳
+      if(ms.y < cur.y || (ms.y===cur.y && ms.m < cur.m)) count++;
     });
     return Math.min(count, p.total);
   }
+
+  // 財務計算用：按下「繳納完畢」後，當月視為已繳，未繳總額即時減少
+  function paidCountFinancial(p){
+    var now = new Date();
+    var cur = {y:now.getFullYear(), m:now.getMonth()+1};
+    var sched = planSchedule(p); var count = 0;
+    sched.forEach(function(ms){
+      if(ms.y < cur.y || (ms.y===cur.y && ms.m < cur.m)){
+        count++;
+      } else if(ms.y===cur.y && ms.m===cur.m && isMonthManuallyPaid(p, ms.y, ms.m)){
+        count++; // 使用者已按「繳納完畢」，當月算已繳（財務上）
+      }
+    });
+    return Math.min(count, p.total);
+  }
+
+  // 相容舊的 paidCount 呼叫，用進度條版本
+  function paidCount(p){ return paidCountDisplay(p); }
+
+  // 未繳總額：用財務版（按下繳納完畢後當月已扣）
+  function planRemainingAmount(p){
+    var paid = paidCountFinancial(p);
+    var sum = 0;
+    for(var idx = paid+1; idx <= p.total; idx++){ sum += planAmountForIndex(p, idx); }
+    return sum;
+  }
+
+  // 本月應繳金額：尚未按「繳納完畢」回傳金額，已按下回傳 -1（代表「已繳納」）
   function amountThisMonth(p){
     var now = new Date();
     var cur = {y:now.getFullYear(), m:now.getMonth()+1};
-    var day = now.getDate();
     var sched = planSchedule(p);
-    // 7號前：當月未繳，要顯示本月應繳
-    // 7號後：當月已繳，本月應繳為0
-    if(day >= PAY_DAY) return 0;
     var hit = sched.find(function(ms){ return ms.y===cur.y && ms.m===cur.m; });
-    return hit ? planAmountForIndex(p, hit.idx) : 0;
+    if(!hit) return 0;
+    if(isMonthManuallyPaid(p, cur.y, cur.m)) return -1; // 已繳納旗標
+    return planAmountForIndex(p, hit.idx);
   }
+
+  // 次月應繳
   function amountNextMonth(p){
     var now = new Date();
     var cur = {y:now.getFullYear(), m:now.getMonth()+1};
-    var day = now.getDate();
-    var sched = planSchedule(p);
-    // 7號前：「次月」就是下個月
-    // 7號後：當月已繳，「次月」才是下個月
     var nxt = addMonths(cur.y, cur.m, 1);
+    var sched = planSchedule(p);
     var hit = sched.find(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
     return hit ? planAmountForIndex(p, hit.idx) : 0;
+  }
+
+  // 計算一群分期在「本月」的已繳筆數 / 未繳金額與筆數
+  // amountThisMonth(p) 回傳: 0=本月無這筆分期、-1=本月已繳（7號後）、>0=本月應繳金額（尚未繳）
+  function monthlyStatus(list){
+    var paidN=0, dueSum=0, dueN=0;
+    list.forEach(function(p){
+      var amt = amountThisMonth(p);
+      if(amt === -1){ paidN++; }
+      else if(amt > 0){ dueSum += amt; dueN++; }
+    });
+    return {paidCount:paidN, dueSum:dueSum, dueCount:dueN};
+  }
+
+  // 將 monthlyStatus 結果轉成顯示文字
+  // 情境：全部已繳→「已繳納 N 筆」；全部未繳→純金額；混合→「已繳納 N 筆・尚欠 NT$X」
+  function monthlyStatusText(list){
+    var s = monthlyStatus(list);
+    if(s.dueCount===0 && s.paidCount>0) return '已繳納 '+s.paidCount+' 筆';
+    if(s.dueCount>0 && s.paidCount>0) return '已繳納 '+s.paidCount+' 筆・尚欠 '+fmtMoney(s.dueSum);
+    if(s.dueCount>0 && s.paidCount===0) return fmtMoney(s.dueSum);
+    return fmtMoney(0);
   }
 
   function load(){
@@ -429,40 +483,44 @@
   }
 
   function renderSummary(){
-    var totalRemaining=0, monthlyDue=0, nextMonthDue=0, activeCount=0;
+    var totalRemaining=0, nextMonthDue=0, activeCount=0;
+    var activePlans=[];
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       totalRemaining += planRemainingAmount(p);
       if(remaining>0){
         activeCount++;
-        monthlyDue += amountThisMonth(p);
         nextMonthDue += amountNextMonth(p);
+        activePlans.push(p);
       }
     });
+    var monthlyText = monthlyStatusText(activePlans);
+    var monthlyStyle = monthlyText.indexOf('已繳納')===0 ? 'font-size:18px' : '';
     document.getElementById('summary').innerHTML =
-      '<div class="card"><p class="label">本月應繳</p><p class="value">'+fmtMoney(monthlyDue)+'</p></div>'+
+      '<div class="card"><p class="label">本月應繳</p><p class="value" style="'+monthlyStyle+'">'+monthlyText+'</p></div>'+
       '<div class="card"><p class="label">次月應繳</p><p class="value">'+fmtMoney(nextMonthDue)+'</p></div>'+
       '<div class="card"><p class="label">未繳總額</p><p class="value">'+fmtMoney(totalRemaining)+'</p></div>'+
       '<div class="card"><p class="label">進行中項目</p><p class="value">'+activeCount+'</p></div>';
   }
 
   function renderBankSummary(){
-    var banks=['T','Z']; var stats={};
-    banks.forEach(function(b){ stats[b]={monthly:0,nextMonthly:0,remaining:0,count:0}; });
+    var banks=['T','Z']; var stats={}; var groups={};
+    banks.forEach(function(b){ stats[b]={nextMonthly:0,remaining:0,count:0}; groups[b]=[]; });
     plans.forEach(function(p){
       var paid=paidCount(p); var remaining=Math.max(p.total-paid,0);
       if(remaining>0){
         stats[p.bank].remaining += planRemainingAmount(p);
         stats[p.bank].count += 1;
-        stats[p.bank].monthly += amountThisMonth(p);
         stats[p.bank].nextMonthly += amountNextMonth(p);
+        groups[p.bank].push(p);
       }
     });
     var html='';
     banks.forEach(function(b){
+      var monthlyText = monthlyStatusText(groups[b]);
       html += '<div class="bank-card '+b+'">'+
         '<p style="font-weight:500">'+b+'　進行中 '+stats[b].count+' 項</p>'+
-        '<p>本月應繳：<span style="font-size:18px;font-weight:500">'+fmtMoney(stats[b].monthly)+'</span></p>'+
+        '<p>本月應繳：<span style="font-size:16px;font-weight:500">'+monthlyText+'</span></p>'+
         '<p>次月應繳：<span style="font-weight:500">'+fmtMoney(stats[b].nextMonthly)+'</span></p>'+
         '<p>未繳總額：<span style="font-weight:500">'+fmtMoney(stats[b].remaining)+'</span></p>'+
       '</div>';
@@ -489,12 +547,28 @@
       var amountLabel = (p.phases && p.phases.length>1)
         ? '前'+p.phases[0].count+'期 '+fmtMoney(p.phases[0].amount)+'／後'+p.phases[1].count+'期 '+fmtMoney(p.phases[1].amount)
         : '每期 '+fmtMoney(p.amount);
+      var monthBlock = '';
+      if(!done){
+        var mAmt = amountThisMonth(p);
+        if(mAmt === -1){
+          monthBlock = '<div class="month-badge">'+
+            '<span class="badge paid">本月已繳</span>'+
+            '<button data-toggle-month="'+p.id+'" style="margin-left:8px;font-size:12px;padding:3px 10px">取消本月已繳</button>'+
+          '</div>';
+        } else if(mAmt > 0){
+          monthBlock = '<div class="month-badge">'+
+            '<span class="badge due">本月未繳・'+fmtMoney(mAmt)+'</span>'+
+            '<button data-toggle-month="'+p.id+'" style="margin-left:8px;font-size:12px;padding:3px 10px;font-weight:500">繳納完畢</button>'+
+          '</div>';
+        }
+      }
       html += '<div class="item-card'+(done?' done':'')+'">'+
         '<div class="row-top">'+
           '<div>'+
             '<span class="badge '+p.bank+'">'+p.bank+'</span>'+
             '<p class="name">'+escapeHtml(p.name)+'</p>'+
             '<p class="meta">'+amountLabel+'　起始 '+p.start+(p.note?'　'+escapeHtml(p.note):'')+'</p>'+
+            monthBlock+
           '</div>'+
           '<div class="actions">'+
             '<button data-edit="'+p.id+'">編輯</button>'+
@@ -509,6 +583,17 @@
     });
     el.innerHTML = html;
 
+    el.querySelectorAll('[data-toggle-month]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-toggle-month');
+        var p = plans.find(function(x){ return x.id===id; });
+        if(!p) return;
+        var now = new Date();
+        toggleMonthPaid(p, now.getFullYear(), now.getMonth()+1);
+        persist();
+        render();
+      });
+    });
     el.querySelectorAll('[data-edit]').forEach(function(btn){
       btn.addEventListener('click', function(){
         var p = plans.find(function(x){ return x.id===btn.getAttribute('data-edit'); });
