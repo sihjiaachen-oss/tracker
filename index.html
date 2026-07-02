@@ -494,13 +494,39 @@
         activePlans.push(p);
       }
     });
+    var status = monthlyStatus(activePlans);
     var monthlyText = monthlyStatusText(activePlans);
     var monthlyStyle = monthlyText.indexOf('已繳納')===0 ? 'font-size:18px' : '';
+    var relevantCount = status.dueCount + status.paidCount; // 本月有分期要繳的項目數
+    var batchBtnHtml = '';
+    if(relevantCount>0){
+      if(status.dueCount>0){
+        batchBtnHtml = '<button id="btn-batch-month" data-mode="pay" style="margin-top:8px;font-size:12px;padding:5px 10px;font-weight:500;width:100%">本月全部繳納完畢</button>';
+      } else {
+        batchBtnHtml = '<button id="btn-batch-month" data-mode="unpay" style="margin-top:8px;font-size:12px;padding:5px 10px;width:100%">取消本月全部已繳</button>';
+      }
+    }
     document.getElementById('summary').innerHTML =
-      '<div class="card"><p class="label">本月應繳</p><p class="value" style="'+monthlyStyle+'">'+monthlyText+'</p></div>'+
+      '<div class="card"><p class="label">本月應繳</p><p class="value" style="'+monthlyStyle+'">'+monthlyText+'</p>'+batchBtnHtml+'</div>'+
       '<div class="card"><p class="label">次月應繳</p><p class="value">'+fmtMoney(nextMonthDue)+'</p></div>'+
       '<div class="card"><p class="label">未繳總額</p><p class="value">'+fmtMoney(totalRemaining)+'</p></div>'+
       '<div class="card"><p class="label">進行中項目</p><p class="value">'+activeCount+'</p></div>';
+
+    var batchBtn = document.getElementById('btn-batch-month');
+    if(batchBtn){
+      batchBtn.addEventListener('click', function(){
+        var mode = batchBtn.getAttribute('data-mode');
+        var now = new Date();
+        var y = now.getFullYear(), m = now.getMonth()+1;
+        activePlans.forEach(function(p){
+          var isPaid = isMonthManuallyPaid(p, y, m);
+          if(mode==='pay' && !isPaid){ toggleMonthPaid(p, y, m); }
+          else if(mode==='unpay' && isPaid){ toggleMonthPaid(p, y, m); }
+        });
+        persist();
+        render();
+      });
+    }
   }
 
   function renderBankSummary(){
