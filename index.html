@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>追蹤工具</title>
+<title>分期追蹤工具</title>
 <style>
   :root{
     --surface-2:#ffffff; --surface-1:#f4f3ef; --surface-0:#eceae3;
@@ -30,7 +30,9 @@
   }
   .wrap{max-width:760px;margin:0 auto}
   h1{font-size:20px;font-weight:500;margin:0 0 4px}
-  .sub{font-size:13px;color:var(--text-muted);margin:0 0 20px}
+  a{color:var(--text-accent,#185fa5)}
+  .nav-link{display:inline-block;font-size:13px;color:var(--text-secondary);text-decoration:none;border:0.5px solid var(--border-strong);border-radius:var(--radius);padding:6px 12px;margin-bottom:16px}
+  .nav-link:hover{background:var(--surface-1)}
   button{
     font-family:inherit; font-size:14px; padding:8px 14px; border-radius:var(--radius);
     border:0.5px solid var(--border-strong); background:transparent; color:var(--text-primary);
@@ -45,7 +47,7 @@
   }
   input:focus,select:focus{outline:none;box-shadow:0 0 0 2px var(--border-strong)}
   label{font-size:13px;color:var(--text-secondary);display:block;margin-bottom:3px}
-  .topbar{display:flex;justify-content:space-between;align-items:center;margin:20px 0 14px;flex-wrap:wrap;gap:8px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin:8px 0 14px;flex-wrap:wrap;gap:8px}
   .tabs button{font-weight:400}
   .tabs button.active{font-weight:500}
   .grid-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:12px}
@@ -97,11 +99,10 @@
   .confirm-box .row{display:flex;gap:8px;justify-content:center}
   .confirm-box .row button{flex:1}
   .confirm-box .danger{background:#c0392b;color:#fff;border-color:#c0392b}
-  .storage-note{font-size:12px;color:var(--text-muted);background:var(--surface-1);border-radius:var(--radius);padding:10px 12px;margin-bottom:20px}
   @media (max-width:480px){
     body{padding:16px 12px 50px;font-size:15px}
     h1{font-size:18px}
-    .topbar{margin:16px 0 12px}
+    .topbar{margin:8px 0 12px}
     button{padding:9px 12px;font-size:13px}
     .item-card{padding:12px 14px}
     .name{font-size:14px}
@@ -134,7 +135,9 @@
 
 <div id="app-content">
 <div class="wrap">
-  <h1>📝追蹤工具</h1>
+  <h1>📝分期追蹤工具</h1>
+  <a class="nav-link" href="rent.html">前往房租記錄 →</a>
+  <a class="nav-link" style="margin-left:8px" href="savings.html">前往存錢記錄 →</a>
 
   <div class="topbar">
     <div class="tabs">
@@ -237,7 +240,6 @@
 <script>
 (function(){
   var STORE_KEY = 'installment_plans_v1';
-  var BANK_LABEL = {T:'台新銀行', Z:'中信銀行'};
   var plans = [];
   var editingId = null;
 
@@ -286,14 +288,6 @@
     var cur=currentYM(); var nxt=addMonths(cur.y,cur.m,1); var sched=planSchedule(p);
     var hit = sched.find(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
     return hit ? planAmountForIndex(p, hit.idx) : 0;
-  }
-  function isActiveThisMonth(p){
-    var cur=currentYM(); var sched=planSchedule(p);
-    return sched.some(function(ms){ return ms.y===cur.y && ms.m===cur.m; });
-  }
-  function isActiveNextMonth(p){
-    var cur=currentYM(); var nxt=addMonths(cur.y,cur.m,1); var sched=planSchedule(p);
-    return sched.some(function(ms){ return ms.y===nxt.y && ms.m===nxt.m; });
   }
 
   function load(){
@@ -596,9 +590,9 @@
     document.getElementById('tab-list').classList.remove('active');
   });
 
-  // ---- Google Drive 同步 (appDataFolder) ----
+  // ---- Google Drive 同步 (appDataFolder)，與房租頁面共用同一個雲端檔案，互相保留對方資料 ----
   var GOOGLE_CLIENT_ID = '318579246047-ahdsc8epir18m3p42krh7tqddrrcbs64.apps.googleusercontent.com';
-  var DRIVE_FILE_NAME = 'installment_tracker_data.json';
+  var DRIVE_FILE_NAME = 'tracker_data.json';
   var driveAccessToken = null;
   var driveFileId = null;
   var tokenClient = null;
@@ -656,11 +650,23 @@
     return null;
   }
 
+  async function fetchRemoteData(id){
+    try{
+      var res = await driveFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
+      if(!res.ok) return {plans:[], rent:[]};
+      var data = await res.json();
+      if(Array.isArray(data)) return {plans: data, rent: []};
+      return {plans: Array.isArray(data.plans)?data.plans:[], rent: Array.isArray(data.rent)?data.rent:[]};
+    }catch(e){ return {plans:[], rent:[]}; }
+  }
+
   async function uploadToDrive(silent){
     if(!driveAccessToken) return false;
     if(!silent) setGoogleStatus('同步中…');
     try{
       var id = driveFileId || await findDriveFile();
+      var remote = id ? await fetchRemoteData(id) : {plans:[], rent:[]};
+      var payload = {plans: plans, rent: remote.rent};
       var metadata = {name: DRIVE_FILE_NAME, mimeType: 'application/json'};
       if(!id) metadata.parents = ['appDataFolder'];
       var boundary = 'boundary_'+Date.now();
@@ -670,7 +676,7 @@
         JSON.stringify(metadata)+'\r\n'+
         '--'+boundary+'\r\n'+
         'Content-Type: application/json\r\n\r\n'+
-        JSON.stringify(plans)+'\r\n'+
+        JSON.stringify(payload)+'\r\n'+
         '--'+boundary+'--';
       var url = id
         ? 'https://www.googleapis.com/upload/drive/v3/files/'+id+'?uploadType=multipart'
@@ -712,12 +718,9 @@
         setGoogleStatus('雲端尚無備份資料，請先按「同步到雲端」建立一份。');
         return;
       }
-      var res = await driveFetch('https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
-      if(!res.ok) throw new Error('download failed');
-      var data = await res.json();
-      if(!Array.isArray(data)) throw new Error('format');
-      if(plans.length>0 && !confirm('從雲端讀取將會「取代」目前畫面上的資料，確定要繼續嗎？')) return;
-      plans = data;
+      var remote = await fetchRemoteData(id);
+      if(plans.length>0 && !confirm('從雲端讀取將會「取代」目前畫面上的分期資料，確定要繼續嗎？')) return;
+      plans = remote.plans;
       persist();
       render();
       setGoogleStatus('已從雲端讀取最新資料。');
@@ -755,7 +758,7 @@
       try{
         var data = JSON.parse(evt.target.result);
         if(!Array.isArray(data)) throw new Error('format');
-        if(plans.length>0 && !confirm('匯入將會「取代」目前所有紀錄，確定要繼續嗎？')) return;
+        if(plans.length>0 && !confirm('匯入將會「取代」目前所有分期紀錄，確定要繼續嗎？')) return;
         plans = data;
         persist();
         render();
